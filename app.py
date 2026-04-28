@@ -37,7 +37,7 @@ async def render_video(
 
     video_path = job_dir / "input.mp4"
     audio_path = job_dir / "voice.mp3"
-    subtitles_path = job_dir / "subtitles.srt"
+    subtitles_path = job_dir / "subtitles.ass"
     output_path = job_dir / "output.mp4"
 
     try:
@@ -49,23 +49,25 @@ async def render_video(
         with open(audio_path, "wb") as buffer:
             shutil.copyfileobj(audio.file, buffer)
 
-        # Save uploaded subtitles
+        # Save uploaded ASS subtitles
         with open(subtitles_path, "wb") as buffer:
             shutil.copyfileobj(subtitles.file, buffer)
 
-        # Burn subtitles, replace audio, and export MP4
+        # Escape subtitle path for FFmpeg ASS filter
+        ass_path = str(subtitles_path).replace("\\", "\\\\").replace(":", "\\:")
+
+        # Burn ASS karaoke subtitles, replace audio, and keep the original video duration
         command = [
             "ffmpeg",
             "-y",
             "-i", str(video_path),
             "-i", str(audio_path),
-            "-vf",
-            f"subtitles={subtitles_path}:force_style='FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=80'",
+            "-vf", f"ass={ass_path}",
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-c:v", "libx264",
             "-c:a", "aac",
-            "-shortest",
+            "-af", "apad",
             str(output_path)
         ]
 

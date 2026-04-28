@@ -68,6 +68,7 @@ async def render_video(
             "-c:v", "libx264",
             "-c:a", "aac",
             "-af", "apad",
+            "-shortest",
             str(output_path)
         ]
 
@@ -75,7 +76,8 @@ async def render_video(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
+            timeout=180
         )
 
         if result.returncode != 0:

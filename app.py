@@ -24,6 +24,63 @@ def health():
     # Manual health check endpoint
     return {"status": "ok"}
 
+@app.post("/get-duration")
+async def get_duration(video: UploadFile = File(...)):
+    # Create a unique folder for this probe job
+    job_id = str(uuid.uuid4())
+    job_dir = WORKDIR / f"probe_{job_id}"
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    video_path = job_dir / "input_video"
+
+    try:
+        # Save uploaded video file
+        with open(video_path, "wb") as buffer:
+            shutil.copyfileobj(video.file, buffer)
+
+        # Use ffprobe to read media duration
+        command = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "json",
+            str(video_path)
+        ]
+
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=60
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "message": "ffprobe failed",
+                    "stderr": result.stderr
+                }
+            )
+
+        data = json.loads(result.stdout)
+        duration = float(data["format"]["duration"])
+
+        return {
+            "duration": duration,
+            "duration_rounded": round(duration),
+            "duration_ms": int(duration * 1000)
+        }
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=504,
+            detail="ffprobe timed out."
+        )
+
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error))
 
 @app.post("/render-video")
 async def render_video(

@@ -28,7 +28,7 @@ BASE_URL = os.environ.get(
 # --- Encoding quality configuration -----------------------------------------
 # CRF: lower = better quality / larger file. 18 is visually near-transparent,
 # 23 is the x264 default (noticeably lossy on fine detail and subtitle edges).
-DEFAULT_CRF = 18
+DEFAULT_CRF = 16
 DEFAULT_PRESET = "slow"
 DEFAULT_AUDIO_BITRATE = "192k"
 DEFAULT_FPS = 30

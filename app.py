@@ -17,7 +17,7 @@ WORKDIR.mkdir(parents=True, exist_ok=True)
 # CRF: lower = better quality / larger file. 18 is visually near-transparent,
 # 23 is the x264 default (noticeably lossy on fine detail and subtitle edges).
 # Preset: slower = better compression efficiency at the same CRF, but more CPU.
-DEFAULT_CRF = 18
+DEFAULT_CRF = 16
 DEFAULT_PRESET = "slow"
 DEFAULT_AUDIO_BITRATE = "192k"
 DEFAULT_FPS = 30

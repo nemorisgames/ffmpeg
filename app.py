@@ -28,7 +28,7 @@ BASE_URL = os.environ.get(
 # --- Encoding quality configuration -----------------------------------------
 # CRF: lower = better quality / larger file. 18 is visually near-transparent,
 # 23 is the x264 default (noticeably lossy on fine detail and subtitle edges).
-DEFAULT_CRF = 16
+DEFAULT_CRF = 18
 DEFAULT_PRESET = "slow"
 DEFAULT_AUDIO_BITRATE = "192k"
 DEFAULT_FPS = 30
@@ -304,6 +304,123 @@ def download(job_id: str):
         path=output_path,
         media_type="video/mp4",
         filename="output.mp4"
+    )
+
+
+@app.post("/extract-audio")
+async def extract_audio(
+    video: Optional[UploadFile] = File(None),
+    video_url: Optional[str] = Form(None),
+    download_headers: Optional[str] = Form(None),
+    sample_rate: int = Form(16000),
+    bitrate: str = Form("64k"),
+    return_file: bool = Form(True)
+):
+    """Extract a speech-optimised audio track from a video.
+
+    Speech recognition models downmix to 16 kHz mono internally, so encoding
+    at that rate loses nothing useful while shrinking a 48 MB video to a few
+    megabytes. This keeps the payload under the 25 MB limit imposed by the
+    OpenAI transcription API and avoids moving video through the workflow.
+    """
+    job_id = str(uuid.uuid4())
+    job_dir = WORKDIR / f"audio_{job_id}"
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    video_path = job_dir / "input_media"
+    output_path = job_dir / "audio.mp3"
+    headers = parse_headers(download_headers)
+
+    try:
+        if not resolve_input(video, video_url, video_path, headers):
+            raise HTTPException(
+                status_code=400,
+                detail="Provide either a video file or a video_url."
+            )
+
+        if not has_audio_stream(video_path):
+            raise HTTPException(
+                status_code=400,
+                detail="The source file contains no audio stream to extract."
+            )
+
+        command = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-vn",                      # drop the video stream entirely
+            "-ac", "1",                 # mono: stereo adds no value for ASR
+            "-ar", str(sample_rate),
+            "-b:a", bitrate,
+            "-c:a", "libmp3lame",
+            str(output_path)
+        ]
+
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=RENDER_TIMEOUT
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "message": "Audio extraction failed",
+                    "stderr": result.stderr[-2000:]
+                }
+            )
+
+        # The source video is no longer needed once the audio exists.
+        video_path.unlink(missing_ok=True)
+
+        if return_file:
+            return FileResponse(
+                path=output_path,
+                media_type="audio/mpeg",
+                filename="audio.mp3"
+            )
+
+        return {
+            "job_id": f"audio_{job_id}",
+            "download_url": f"{BASE_URL}/download-audio/audio_{job_id}",
+            "size_bytes": output_path.stat().st_size,
+            "duration": probe_duration(output_path)
+        }
+
+    except HTTPException:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(status_code=504, detail="Audio extraction timed out.")
+    except Exception as error:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=str(error))
+
+
+@app.get("/download-audio/{job_id}")
+def download_audio(job_id: str):
+    """Serve an extracted audio track by job id."""
+    if not job_id.startswith("audio_"):
+        raise HTTPException(status_code=400, detail="Invalid job id.")
+    try:
+        uuid.UUID(job_id.removeprefix("audio_"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job id.")
+
+    audio_path = WORKDIR / job_id / "audio.mp3"
+    if not audio_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found or already cleaned up."
+        )
+
+    return FileResponse(
+        path=audio_path,
+        media_type="audio/mpeg",
+        filename="audio.mp3"
     )
 
 
